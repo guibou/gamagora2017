@@ -302,6 +302,18 @@ Sample sampleUniformHemisphere(const float u, const float v)
 				};
 }
 
+Sample sampleUniformHemisphereCos(const float u, const float v)
+{
+	const float pi2u = 2 * M_PI * u;
+	const float sqrt1minusv = std::sqrt(1 - v);
+
+	const float sqrtv = std::sqrt(v);
+	return Sample{
+		NormalizedDirection{Vec{std::cos(pi2u) * sqrt1minusv, std::sin(pi2u) * sqrt1minusv, sqrtv}},
+			float(sqrtv / M_PI)
+				};
+}
+
 // Orthonormal base
 // From
 // http://jcgt.org/published/0006/01/01/
@@ -393,7 +405,7 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 			// indirect for diffuse
 			float u = uniformRandom(randomGenerator);
 			float v = uniformRandom(randomGenerator);
-			const auto sample = sampleUniformHemisphere(u, v);
+			const auto sample = sampleUniformHemisphereCos(u, v);
 
 			const auto direction = RotateAroundBase(sample.direction, (dot(normal.value, ray.direction.value) < 0 ? normal : invert(normal)));
 
