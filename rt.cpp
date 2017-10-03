@@ -290,9 +290,9 @@ struct Sample
 	float pdf;
 };
 
-Ray offsetRay(const Ray &ray)
+Ray offsetRay(const Ray &ray, const NormalizedDirection &normal)
 {
-	return Ray{Position{ray.origin.value + 0.001 * ray.direction.value}, ray.direction};
+	return Ray{Position{ray.origin.value + 0.001 * normal.value}, ray.direction};
 }
 
 // TotalCompendium, (34)
@@ -441,7 +441,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 			// check occlusion
 			const Ray ray{p, illuminationDirection};
 
-			const auto it = intersectScene(offsetRay(ray), scene);
+			const auto it = intersectScene(offsetRay(ray, n), scene);
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
@@ -470,15 +470,15 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 	if(it)
 	{
 		Position origin = getIntersectionPosition(ray, it->t);
-		NormalizedDirection normal = getNormal(it->object->sphere, origin);
-
+		NormalizedDirection normalGeom = getNormal(it->object->sphere, origin);
+		NormalizedDirection normal = dot(normalGeom.value, ray.direction.value) < 0 ? normalGeom : invert(normalGeom);
 		Color indirectLighting{Vec{0, 0, 0}};
 
 		if(it->object->isMirror)
 		{
 			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
 			const Ray newRay{origin, direction};
-			indirectLighting = radiance(offsetRay(newRay), scene, lights, depth + 1);
+			indirectLighting = radiance(offsetRay(newRay, normal), scene, lights, depth + 1);
 		}
 		else
 		{
@@ -487,13 +487,13 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 			float v = uniformRandom(randomGenerator);
 			const auto sample = sampleUniformHemisphereCos(u, v);
 
-			const auto direction = RotateAroundBase(sample.sample, (dot(normal.value, ray.direction.value) < 0 ? normal : invert(normal)));
+			const auto direction = RotateAroundBase(sample.sample, normal);
 
 			const Ray newRay{origin, direction};
 
 			const float f = dot(normal.value, direction.value) / M_PI;
 
-			const auto Li = radiance(offsetRay(newRay), scene, lights, depth + 1);
+			const auto Li = radiance(offsetRay(newRay, normal), scene, lights, depth + 1);
 
 			indirectLighting = it->object->color * f / sample.pdf * Li;
 		}
