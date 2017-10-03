@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <random>
 
 float sqr(const float v)
 {
@@ -291,7 +292,7 @@ struct Sample
 };
 
 // TotalCompendium, (34)
-Sample sampleUniformHemisphereSphere(const float u, const float v)
+Sample sampleUniformHemisphere(const float u, const float v)
 {
 	const float pi2u = 2 * M_PI * u;
 	const float sqrt1minusvv = std::sqrt(1 - sqr(v));
@@ -321,6 +322,12 @@ NormalizedDirection RotateAroundBase(const NormalizedDirection &input, const Nor
 	return NormalizedDirection{basex * input.value.x + basey * input.value.y + normal.value * input.value.z};
 };
 
+std::random_device r;
+
+// Choose a random mean between 1 and 6
+std::default_random_engine randomGenerator(r());
+std::uniform_real_distribution<float> uniformRandom(0, 1);
+
 Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
 {
 	Color Lo{Vec{0, 0, 0}};
@@ -336,7 +343,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 		const NormalizedDirection illuminationDirection(normalize(illuminationEdge));
 
 		// evaluation de la fonction de surface
-		const float f = dot(n.value, illuminationDirection.value);
+		const float f = dot(n.value, illuminationDirection.value) / M_PI;
 
 		if(f > 0)
 		{
@@ -354,6 +361,11 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 	}
 
 	return Lo;
+}
+
+NormalizedDirection invert(const NormalizedDirection &n)
+{
+	return NormalizedDirection{n.value * -1};
 }
 
 Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vector<Light> &lights, const int depth)
@@ -375,6 +387,23 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
 			const Ray newRay{origin, direction};
 			indirectLighting = radiance(offsetRay(newRay), scene, lights, depth + 1);
+		}
+		else
+		{
+			// indirect for diffuse
+			float u = uniformRandom(randomGenerator);
+			float v = uniformRandom(randomGenerator);
+			const auto sample = sampleUniformHemisphere(u, v);
+
+			const auto direction = RotateAroundBase(sample.direction, (dot(normal.value, ray.direction.value) < 0 ? normal : invert(normal)));
+
+			const Ray newRay{origin, direction};
+
+			const float f = dot(normal.value, direction.value) / M_PI;
+
+			const auto Li = radiance(offsetRay(newRay), scene, lights, depth + 1);
+
+			indirectLighting = it->object->color * f / sample.pdf * Li;
 		}
 
 		Color directLighting{Vec{0, 0, 0}};
