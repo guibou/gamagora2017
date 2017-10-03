@@ -267,7 +267,45 @@ NormalizedDirection getMirrorDirection(const NormalizedDirection &I, const Norma
 	return NormalizedDirection{direction};
 }
 
-Color radiance(const Ray &ray, const std::vector<Object> &scene, const int depth)
+struct Light
+{
+	Sphere shape;
+	Color intensity;
+};
+
+Position selectPointOnLight(const Light &l)
+{
+	return l.shape.center;
+}
+
+Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights)
+{
+	Color Lo{Vec{0, 0, 0}};
+
+	for(const auto & light : lights)
+	{
+		const auto illuminationPoint = selectPointOnLight(light);
+
+		const Vec illuminationEdge = illuminationPoint.value - p.value;
+
+		const float distanceSquared = norm2(illuminationEdge);
+
+		const NormalizedDirection illuminationDirection(normalize(illuminationEdge));
+
+		// evaluation de la fonction de surface
+		const float f = dot(n.value, illuminationDirection.value);
+
+		if(f > 0)
+		{
+			const Color Li = light.intensity * (1.0f / distanceSquared);
+			Lo = Lo + Li * f;
+		}
+	}
+
+	return Lo;
+}
+
+Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vector<Light> &lights, const int depth)
 {
 	if(depth == 10)
 		return Color{Vec{0, 0, 0}};
@@ -276,17 +314,18 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const int depth
 
 	if(it)
 	{
+		Position origin = getIntersectionPosition(ray, it->t);
+		NormalizedDirection normal = getNormal(it->object->sphere, origin);
 		if(it->object->isMirror)
 		{
-			Position origin = getIntersectionPosition(ray, it->t);
-			NormalizedDirection normal = getNormal(it->object->sphere, origin);
 			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
 			const Ray newRay{origin, direction};
-			return radiance(newRay, scene, depth + 1);
+			return radiance(newRay, scene, lights, depth + 1);
 		}
 		else
 		{
-			return it->object->color;
+			const auto Lo = getLo(origin, normal, lights);
+			return it->object->color * Lo;
 		}
 	}
 	else
@@ -365,14 +404,19 @@ int main()
 	FILE * const f = fopen ("image.ppm", "w");
 	fprintf (f, "P3\n%d %d\n%d\n", w, h, 255);
 
-	float R = 100;
+	float R = 1000;
 	std::vector<Object> scene{
-		{{Position{Vec{0, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, true}, // Center
+		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, true}, // Center Mirror
+		{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, false}, // Center Diffuse
 		{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, false}, // left
 		{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, false}, // right
 		{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false}, // top
 		{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false}, // bottom
 		{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false} // back
+	};
+
+	std::vector<Light> lights{
+		{{Position{Vec{0, 10, 0}}, 2}, Color{Vec{500, 500, 500}}}
 	};
 
 	for(unsigned y = 0; y < h; ++y)
@@ -381,7 +425,7 @@ int main()
 		{
 			const Ray ray = sampleCamera(camera, x, h - y);
 
-			Color color = radiance(ray, scene, 0);
+			Color color = radiance(ray, scene, lights, 0);
 
 			fprintf (f, "%d %d %d ", toInt(color.value.x), toInt(color.value.y), toInt(color.value.z));
 		}
