@@ -462,7 +462,7 @@ NormalizedDirection invert(const NormalizedDirection &n)
 
 Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vector<Light> &lights, const int depth)
 {
-	if(depth == 10)
+	if(depth == 5)
 		return Color{Vec{0, 0, 0}};
 
 	auto it = intersectScene(ray, scene);
