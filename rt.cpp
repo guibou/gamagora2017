@@ -278,6 +278,11 @@ Position selectPointOnLight(const Light &l)
 	return l.shape.center;
 }
 
+Ray offsetRay(const Ray &ray)
+{
+	return Ray{Position{ray.origin.value + 0.001 * ray.direction.value}, ray.direction};
+}
+
 Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
 {
 	Color Lo{Vec{0, 0, 0}};
@@ -300,7 +305,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 			// check occlusion
 			const Ray ray{p, illuminationDirection};
 
-			const auto it = intersectScene(ray, scene);
+			const auto it = intersectScene(offsetRay(ray), scene);
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
@@ -328,7 +333,7 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 		{
 			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
 			const Ray newRay{origin, direction};
-			return radiance(newRay, scene, lights, depth + 1);
+			return radiance(offsetRay(newRay), scene, lights, depth + 1);
 		}
 		else
 		{
