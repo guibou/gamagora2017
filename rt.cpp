@@ -278,7 +278,7 @@ Position selectPointOnLight(const Light &l)
 	return l.shape.center;
 }
 
-Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights)
+Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
 {
 	Color Lo{Vec{0, 0, 0}};
 
@@ -297,8 +297,16 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 
 		if(f > 0)
 		{
-			const Color Li = light.intensity * (1.0f / distanceSquared);
-			Lo = Lo + Li * f;
+			// check occlusion
+			const Ray ray{p, illuminationDirection};
+
+			const auto it = intersectScene(ray, scene);
+
+			if(!it || sqr(it->t) > distanceSquared)
+			{
+				const Color Li = light.intensity * (1.0f / distanceSquared);
+				Lo = Lo + Li * f;
+			}
 		}
 	}
 
@@ -324,7 +332,7 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 		}
 		else
 		{
-			const auto Lo = getLo(origin, normal, lights);
+			const auto Lo = getLo(origin, normal, lights, scene);
 			return it->object->color * Lo;
 		}
 	}
@@ -390,7 +398,7 @@ int main()
 									Object{Sphere{Position{Vec{10, 0, 0}}, 9}, Color{Vec{1, 0, 0}}, false},
 									Object{Sphere{Position{Vec{4, 0, 0}}, 2}, Color{Vec{1, 1, 1}}, false}}) << " should be " << 1 << std::endl;
 
-	const Camera camera{1024, 40, -10, 1.15}; // 1024x1024 pixels, with the screen between [-20 and 20]
+	const Camera camera{1024, 40, -10, 1.17}; // 1024x1024 pixels, with the screen between [-20 and 20]
 
 	std::cout << scaleCoordinate(camera, 0) << " should be " << -20 << std::endl;
 	std::cout << scaleCoordinate(camera, 1024) << " should be " << 20 << std::endl;
