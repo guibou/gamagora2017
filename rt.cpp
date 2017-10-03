@@ -448,7 +448,7 @@ float scaleCoordinate(const Camera &camera, const float v)
 	return ((v / camera.pixelSize) - 0.5) * camera.sceneSize;
 }
 
-Ray sampleCamera(const Camera &camera, const int x, const int y)
+Ray sampleCamera(const Camera &camera, const float x, const float y)
 {
 	// we sample a point on the camera plane
 	const Position posCameraA{Vec{scaleCoordinate(camera, x), scaleCoordinate(camera, y), camera.zPos}};
@@ -519,13 +519,25 @@ int main()
 		{{Position{Vec{0, 10, 0}}, 2}, Color{Vec{500, 500, 500}}}
 	};
 
+	const int nSamples = 10;
+
 	for(unsigned y = 0; y < h; ++y)
 	{
 		for(unsigned x = 0; x < w; ++x)
 		{
-			const Ray ray = sampleCamera(camera, x, h - y);
+			Color color{Vec{0, 0, 0}};
 
-			Color color = radiance(ray, scene, lights, 0);
+			for(uint sample = 0; sample < nSamples; sample++)
+			{
+				const float u = uniformRandom(randomGenerator);
+				const float v = uniformRandom(randomGenerator);
+
+				const Ray ray = sampleCamera(camera, x + u - 0.5f, h - y + v - 0.5f);
+
+				color = color + radiance(ray, scene, lights, 0);
+			}
+
+			color = color / float(nSamples);
 
 			fprintf (f, "%d %d %d ", toInt(color.value.x), toInt(color.value.y), toInt(color.value.z));
 		}
