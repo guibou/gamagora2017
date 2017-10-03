@@ -347,11 +347,11 @@ NormalizedDirection RotateAroundBase(const NormalizedDirection &input, const Nor
 	return NormalizedDirection{basex * input.value.x + basey * input.value.y + normal.value * input.value.z};
 };
 
-std::random_device r;
+thread_local std::random_device r;
 
 // Choose a random mean between 1 and 6
-std::default_random_engine randomGenerator(r());
-std::uniform_real_distribution<float> uniformRandom(0, 1);
+thread_local std::default_random_engine randomGenerator(r());
+thread_local std::uniform_real_distribution<float> uniformRandom(0, 1);
 
 Sample<Position> selectPointOnLight(const Light &l)
 {
@@ -549,9 +549,6 @@ int main()
 	const int w = camera.pixelSize;
 	const int h = camera.pixelSize;
 
-	FILE * const f = fopen ("image.ppm", "w");
-	fprintf (f, "P3\n%d %d\n%d\n", w, h, 255);
-
 	float R = 1000;
 	std::vector<Object> scene{
 		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, true}, // Center Mirror
@@ -569,6 +566,9 @@ int main()
 
 	const int nSamples = 64;
 
+	std::vector<Color> output(w * h, Color{Vec{0, 0, 0}});
+	
+#pragma omp parallel for
 	for(unsigned y = 0; y < h; ++y)
 	{
 		for(unsigned x = 0; x < w; ++x)
@@ -585,10 +585,16 @@ int main()
 				color = color + radiance(ray, scene, lights, 0);
 			}
 
-			color = color / float(nSamples);
-
-			fprintf (f, "%d %d %d ", toInt(color.value.x), toInt(color.value.y), toInt(color.value.z));
+			output[y * w + x] = color / nSamples;
 		}
+	}
+
+	FILE * const f = fopen ("image.ppm", "w");
+	fprintf (f, "P3\n%d %d\n%d\n", w, h, 255);
+
+	for(const auto &color : output)
+	{
+		fprintf (f, "%d %d %d ", toInt(color.value.x), toInt(color.value.y), toInt(color.value.z));
 	}
 
 	fclose(f);
