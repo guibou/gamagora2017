@@ -567,7 +567,7 @@ int main()
 		{{Position{Vec{0, 10, 0}}, 2}, Color{Vec{10000, 10000, 10000}}}
 	};
 
-	const int nSamples = 1;
+	const int nSamples = 64;
 
 	for(unsigned y = 0; y < h; ++y)
 	{
