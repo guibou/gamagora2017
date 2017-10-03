@@ -377,7 +377,13 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 {
 	Color Lo{Vec{0, 0, 0}};
 
-	for(const auto & light : lights)
+	// stochastically select a light
+	const float uLight = uniformRandom(randomGenerator);
+	const int lightIdx = int(uLight * lights.size());
+	const float pdfLight = 1.f / lights.size();
+
+	const auto &light = lights[lightIdx];
+
 	{
 		const auto illuminationSample = selectPointOnLight(light);
 
@@ -414,8 +420,8 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 				  le 2 pi vient du fait que la surface éclaire des deux cotés, d'ou la valeur absolue dans le dot ui suit
 				*/
 
-				const Color Li = light.intensity * (1.0f / distanceSquared) / (surface(light.shape) * 2 * M_PI) * std::abs(dot(nAtLightSurface.value, illuminationDirection.value)) / illuminationSample.pdf;
-				Lo = Lo + Li * f;
+				const Color Li = light.intensity * (1.0f / distanceSquared) / (surface(light.shape) * 2 * M_PI) * std::abs(dot(nAtLightSurface.value, illuminationDirection.value)) / illuminationSample.pdf / pdfLight;
+				Lo = Li * f;
 			}
 		}
 	}
