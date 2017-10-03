@@ -274,9 +274,17 @@ struct Light
 	Color intensity;
 };
 
-Position selectPointOnLight(const Light &l)
+// Sampling
+template<typename T>
+struct Sample
 {
-	return l.shape.center;
+	T sample;
+	float pdf;
+};
+
+Sample<Position> selectPointOnLight(const Light &l)
+{
+	return {l.shape.center, 1.0f};
 }
 
 Ray offsetRay(const Ray &ray)
@@ -284,15 +292,9 @@ Ray offsetRay(const Ray &ray)
 	return Ray{Position{ray.origin.value + 0.001 * ray.direction.value}, ray.direction};
 }
 
-// Sampling
-struct Sample
-{
-	NormalizedDirection direction;
-	float pdf;
-};
 
 // TotalCompendium, (34)
-Sample sampleUniformHemisphere(const float u, const float v)
+Sample<NormalizedDirection> sampleUniformHemisphere(const float u, const float v)
 {
 	const float pi2u = 2 * M_PI * u;
 	const float sqrt1minusvv = std::sqrt(1 - sqr(v));
@@ -302,13 +304,13 @@ Sample sampleUniformHemisphere(const float u, const float v)
 				};
 }
 
-Sample sampleUniformHemisphereCos(const float u, const float v)
+Sample<NormalizedDirection> sampleUniformHemisphereCos(const float u, const float v)
 {
 	const float pi2u = 2 * M_PI * u;
 	const float sqrt1minusv = std::sqrt(1 - v);
 
 	const float sqrtv = std::sqrt(v);
-	return Sample{
+	return {
 		NormalizedDirection{Vec{std::cos(pi2u) * sqrt1minusv, std::sin(pi2u) * sqrt1minusv, sqrtv}},
 			float(sqrtv / M_PI)
 				};
@@ -346,16 +348,16 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 
 	for(const auto & light : lights)
 	{
-		const auto illuminationPoint = selectPointOnLight(light);
+		const auto illuminationSample = selectPointOnLight(light);
 
-		const Vec illuminationEdge = illuminationPoint.value - p.value;
+		const Vec illuminationEdge = illuminationSample.sample.value - p.value;
 
 		const float distanceSquared = norm2(illuminationEdge);
 
 		const NormalizedDirection illuminationDirection(normalize(illuminationEdge));
 
 		// evaluation de la fonction de surface
-		const float f = dot(n.value, illuminationDirection.value) / M_PI;
+		const float f = dot(n.value, illuminationDirection.value) / illuminationSample.pdf / M_PI;
 
 		if(f > 0)
 		{
@@ -407,7 +409,7 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 			float v = uniformRandom(randomGenerator);
 			const auto sample = sampleUniformHemisphereCos(u, v);
 
-			const auto direction = RotateAroundBase(sample.direction, (dot(normal.value, ray.direction.value) < 0 ? normal : invert(normal)));
+			const auto direction = RotateAroundBase(sample.sample, (dot(normal.value, ray.direction.value) < 0 ? normal : invert(normal)));
 
 			const Ray newRay{origin, direction};
 
