@@ -204,11 +204,6 @@ std::optional<float> intersectSphere(const Ray &ray, const Sphere &sphere)
 	}
 }
 
-float scaleCoordinate(const float v)
-{
-	return ((v / 1024) - 0.5) * 40;
-}
-
 int toInt(const float v)
 {
 	return int(v * 255);
@@ -300,6 +295,31 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const int depth
 	}
 }
 
+struct Camera
+{
+	int pixelSize;
+	float sceneSize;
+
+	float zPos;
+	float opening;
+};
+
+float scaleCoordinate(const Camera &camera, const float v)
+{
+	return ((v / camera.pixelSize) - 0.5) * camera.sceneSize;
+}
+
+Ray sampleCamera(const Camera &camera, const int x, const int y)
+{
+	// we sample a point on the camera plane
+	const Position posCameraA{Vec{scaleCoordinate(camera, x), scaleCoordinate(camera, y), camera.zPos}};
+
+	// we sample a point on a bigger plane away from the camera
+	const Position posCameraB {Vec{posCameraA.value.x * camera.opening, posCameraA.value.y * camera.opening, camera.zPos + 10}};
+
+	return {posCameraA, NormalizedDirection{posCameraB.value - posCameraA.value}};
+}
+
 int main()
 {
 	// TESTS
@@ -331,14 +351,16 @@ int main()
 									Object{Sphere{Position{Vec{10, 0, 0}}, 9}, Color{Vec{1, 0, 0}}, false},
 									Object{Sphere{Position{Vec{4, 0, 0}}, 2}, Color{Vec{1, 1, 1}}, false}}) << " should be " << 1 << std::endl;
 
-	std::cout << scaleCoordinate(0) << " should be " << -20 << std::endl;
-	std::cout << scaleCoordinate(1024) << " should be " << 20 << std::endl;
-	std::cout << scaleCoordinate(512) << " should be " << 0 << std::endl;
+	const Camera camera{1024, 40, -10, 1.15}; // 1024x1024 pixels, with the screen between [-20 and 20]
+
+	std::cout << scaleCoordinate(camera, 0) << " should be " << -20 << std::endl;
+	std::cout << scaleCoordinate(camera, 1024) << " should be " << 20 << std::endl;
+	std::cout << scaleCoordinate(camera, 512) << " should be " << 0 << std::endl;
 	std::cout << toInt(0) << " should be " << 0 << std::endl;
 	std::cout << toInt(1) << " should be " << 255 << std::endl;
 
-	const int w = 1024;
-	const int h = 1024;
+	const int w = camera.pixelSize;
+	const int h = camera.pixelSize;
 
 	FILE * const f = fopen ("image.ppm", "w");
 	fprintf (f, "P3\n%d %d\n%d\n", w, h, 255);
@@ -357,7 +379,7 @@ int main()
 	{
 		for(unsigned x = 0; x < w; ++x)
 		{
-			const Ray ray{Position{Vec{scaleCoordinate(x), scaleCoordinate(y), -50}}, NormalizedDirection{Vec{0, 0, 1}}};
+			const Ray ray = sampleCamera(camera, x, h - y);
 
 			Color color = radiance(ray, scene, 0);
 
