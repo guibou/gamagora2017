@@ -282,16 +282,21 @@ struct Sample
 	float pdf;
 };
 
-Sample<Position> selectPointOnLight(const Light &l)
-{
-	return {l.shape.center, 1.0f};
-}
-
 Ray offsetRay(const Ray &ray)
 {
 	return Ray{Position{ray.origin.value + 0.001 * ray.direction.value}, ray.direction};
 }
 
+// TotalCompendium, (34)
+Sample<NormalizedDirection> sampleUniformSphere(const float u, const float v)
+{
+	const float pi2u = 2 * M_PI * u;
+	const float sqrtv1minusv = std::sqrt(v * (1 - v));
+	return {
+		NormalizedDirection{Vec{2.f * std::cos(pi2u) * sqrtv1minusv, 2.f * std::sin(pi2u) * sqrtv1minusv, 1.f - 2 * v}},
+			1 / (4.f * M_PI)
+				};
+}
 
 // TotalCompendium, (34)
 Sample<NormalizedDirection> sampleUniformHemisphere(const float u, const float v)
@@ -304,6 +309,7 @@ Sample<NormalizedDirection> sampleUniformHemisphere(const float u, const float v
 				};
 }
 
+// Total compendium (35)
 Sample<NormalizedDirection> sampleUniformHemisphereCos(const float u, const float v)
 {
 	const float pi2u = 2 * M_PI * u;
@@ -342,6 +348,26 @@ std::random_device r;
 std::default_random_engine randomGenerator(r());
 std::uniform_real_distribution<float> uniformRandom(0, 1);
 
+Sample<Position> selectPointOnLight(const Light &l)
+{
+	float u = uniformRandom(randomGenerator);
+	float v = uniformRandom(randomGenerator);
+
+	// select a point on an unit sphere
+	const auto sample = sampleUniformSphere(u, v);
+
+	// move it and scale it
+	const auto p{l.shape.center.value + l.shape.radius * sample.sample.value};
+
+	// pdf is modified by the light radius
+	return {p, sample.pdf / sqr(l.shape.radius)};
+}
+
+float surface(const Sphere &s)
+{
+	return sqr(s.radius) * 4 * M_PI;
+}
+
 Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
 {
 	Color Lo{Vec{0, 0, 0}};
@@ -357,7 +383,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 		const NormalizedDirection illuminationDirection(normalize(illuminationEdge));
 
 		// evaluation de la fonction de surface
-		const float f = dot(n.value, illuminationDirection.value) / illuminationSample.pdf / M_PI;
+		const float f = dot(n.value, illuminationDirection.value) / M_PI;
 
 		if(f > 0)
 		{
@@ -368,7 +394,22 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
-				const Color Li = light.intensity * (1.0f / distanceSquared);
+				const NormalizedDirection nAtLightSurface = getNormal(light.shape, illuminationSample.sample);
+
+				/*
+				  Note: on éclaire avec une lampe un peu bizarre, c'est une surface sphérique, mais qui n'existe pas dans la scene en tant que géometrie et donc ne fait pas d'ombrage.
+
+				  ainsi, l'intégrale de la lampe, qui doit être égale à light.intensity est tel que :
+
+				  =\int \Omega  \int _ S light.intensity * cos(\theta) dx
+				  = light.intensity * Surface * 2 * pi
+
+				  il faut donc normaliser par 1 / (surface * 2 * PI)
+
+				  le 2 pi vient du fait que la surface éclaire des deux cotés, d'ou la valeur absolue dans le dot ui suit
+				*/
+
+				const Color Li = light.intensity * (1.0f / distanceSquared) / (surface(light.shape) * 2 * M_PI) * std::abs(dot(nAtLightSurface.value, illuminationDirection.value)) / illuminationSample.pdf;
 				Lo = Lo + Li * f;
 			}
 		}
@@ -518,10 +559,10 @@ int main()
 	};
 
 	std::vector<Light> lights{
-		{{Position{Vec{0, 10, 0}}, 2}, Color{Vec{500, 500, 500}}}
+		{{Position{Vec{0, 10, 0}}, 2}, Color{Vec{10000, 10000, 10000}}}
 	};
 
-	const int nSamples = 10;
+	const int nSamples = 1;
 
 	for(unsigned y = 0; y < h; ++y)
 	{
