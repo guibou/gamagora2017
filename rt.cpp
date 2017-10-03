@@ -283,6 +283,44 @@ Ray offsetRay(const Ray &ray)
 	return Ray{Position{ray.origin.value + 0.001 * ray.direction.value}, ray.direction};
 }
 
+// Sampling
+struct Sample
+{
+	NormalizedDirection direction;
+	float pdf;
+};
+
+// TotalCompendium, (34)
+Sample sampleUniformHemisphereSphere(const float u, const float v)
+{
+	const float pi2u = 2 * M_PI * u;
+	const float sqrt1minusvv = std::sqrt(1 - sqr(v));
+	return {
+		NormalizedDirection{Vec{std::cos(pi2u) * sqrt1minusvv, std::sin(pi2u) * sqrt1minusvv, v}},
+			1 / (2.f * M_PI)
+				};
+}
+
+// Orthonormal base
+// From
+// http://jcgt.org/published/0006/01/01/
+void branchlessONB(const Vec & n , Vec & b1 , Vec & b2 )
+{
+	float sign = std::copysign(1.0f, n.z);
+	const float a = -1.0f / (sign + n.z);
+	const float b = n.x * n.y * a;
+	b1 = Vec{1.0f + sign * n.x * n.x * a, sign * b, -sign * n.x};
+	b2 = Vec{b, sign + n.y * n.y * a, -n.y};
+}
+
+NormalizedDirection RotateAroundBase(const NormalizedDirection &input, const NormalizedDirection &normal)
+{
+	Vec basex, basey;
+	branchlessONB(normal.value, basex, basey);
+
+	return NormalizedDirection{basex * input.value.x + basey * input.value.y + normal.value * input.value.z};
+};
+
 Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
 {
 	Color Lo{Vec{0, 0, 0}};
@@ -329,17 +367,25 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 	{
 		Position origin = getIntersectionPosition(ray, it->t);
 		NormalizedDirection normal = getNormal(it->object->sphere, origin);
+
+		Color indirectLighting{Vec{0, 0, 0}};
+
 		if(it->object->isMirror)
 		{
 			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
 			const Ray newRay{origin, direction};
-			return radiance(offsetRay(newRay), scene, lights, depth + 1);
+			indirectLighting = radiance(offsetRay(newRay), scene, lights, depth + 1);
 		}
-		else
+
+		Color directLighting{Vec{0, 0, 0}};
+
+		if(!it->object->isMirror)
 		{
 			const auto Lo = getLo(origin, normal, lights, scene);
-			return it->object->color * Lo;
+			directLighting = it->object->color * Lo;
 		}
+
+		return directLighting + indirectLighting;
 	}
 	else
 	{
