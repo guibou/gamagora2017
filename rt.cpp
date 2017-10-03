@@ -168,11 +168,25 @@ struct Sphere
 	float radius;
 };
 
+struct Diffuse
+{};
+
+float FDiffuse(const NormalizedDirection &n, const NormalizedDirection w)
+{
+	return dot(n.value, w.value) / M_PI;
+}
+
+struct Mirror
+{};
+
+using Material = std::variant<Diffuse, Mirror>;
+
 struct Object
 {
 	Sphere sphere;
-	Color color;
-	bool isMirror;
+	Color albedo;
+
+	Material material;
 };
 
 std::optional<float> intersectSphere(const Ray &ray, const Sphere &sphere)
@@ -234,9 +248,34 @@ std::ostream& operator<<(std::ostream &stream, const Sphere &s)
 	return stream;
 }
 
+struct MaterialStream
+{
+	std::ostream& stream;
+
+	std::ostream& operator()(const Diffuse &) const
+	{
+		stream << "Diffuse{}";
+		return stream;
+	}
+
+	std::ostream& operator()(const Mirror &) const
+	{
+		stream << "Mirror{}";
+		return stream;
+	}
+};
+
+std::ostream& operator<<(std::ostream &stream, const Material &m)
+{
+	stream << "Material{";
+	std::visit(MaterialStream{stream}, m);
+	stream << "}";
+	return stream;
+}
+
 std::ostream& operator<<(std::ostream &stream, const Object &o)
 {
-	stream << "Object{" << o.sphere << "," << o.color << "," << o.isMirror << "}";
+	stream << "Object{" << o.sphere << "," << o.albedo << "," << o.material << "}";
 	return stream;
 }
 
@@ -415,7 +454,23 @@ struct LightIllumination
 	}
 };
 
-Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene)
+struct ComputeDirectLighting
+{
+	NormalizedDirection n;
+	NormalizedDirection illuminationDirection;
+
+	float operator()(const Diffuse &) const
+	{
+		return FDiffuse(n, illuminationDirection);
+	}
+
+	float operator()(const Mirror &) const
+	{
+		return 0.f;
+	}
+};
+
+Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene, const Material &material)
 {
 	// stochastically select a light
 	const float uLight = uniformRandom(randomGenerator);
@@ -434,7 +489,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 		const NormalizedDirection illuminationDirection(normalize(illuminationEdge));
 
 		// evaluation de la fonction de surface
-		const float f = dot(n.value, illuminationDirection.value) / M_PI;
+		const float f = std::visit(ComputeDirectLighting{n, illuminationDirection}, material);
 
 		if(f > 0)
 		{
@@ -460,6 +515,34 @@ NormalizedDirection invert(const NormalizedDirection &n)
 	return NormalizedDirection{n.value * -1};
 }
 
+struct SampleIndirect
+{
+	float contrib;
+	NormalizedDirection direction;
+};
+
+struct IndirectSampling
+{
+	NormalizedDirection normal;
+	NormalizedDirection rayDirection;
+
+	SampleIndirect operator()(const Diffuse &) const
+	{
+		float u = uniformRandom(randomGenerator);
+		float v = uniformRandom(randomGenerator);
+		const auto sample = sampleUniformHemisphereCos(u, v);
+		const auto direction = RotateAroundBase(sample.sample, normal);
+		const float f = FDiffuse(normal, direction);
+
+		return {f / sample.pdf, direction};
+	}
+
+	SampleIndirect operator()(const Mirror &) const
+	{
+		return {1.f, getMirrorDirection(rayDirection, normal)};
+	}
+};
+
 Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vector<Light> &lights, const int depth)
 {
 	if(depth == 5)
@@ -472,39 +555,19 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 		Position origin = getIntersectionPosition(ray, it->t);
 		NormalizedDirection normalGeom = getNormal(it->object->sphere, origin);
 		NormalizedDirection normal = dot(normalGeom.value, ray.direction.value) < 0 ? normalGeom : invert(normalGeom);
+
 		Color indirectLighting{Vec{0, 0, 0}};
 
-		if(it->object->isMirror)
+		const auto sampleIndirect = std::visit(IndirectSampling{normal, ray.direction}, it->object->material);
+
+		if(sampleIndirect.contrib > 0.f)
 		{
-			NormalizedDirection direction = getMirrorDirection(ray.direction, normal);
-			const Ray newRay{origin, direction};
-			indirectLighting = radiance(offsetRay(newRay, normal), scene, lights, depth + 1);
-		}
-		else
-		{
-			// indirect for diffuse
-			float u = uniformRandom(randomGenerator);
-			float v = uniformRandom(randomGenerator);
-			const auto sample = sampleUniformHemisphereCos(u, v);
-
-			const auto direction = RotateAroundBase(sample.sample, normal);
-
-			const Ray newRay{origin, direction};
-
-			const float f = dot(normal.value, direction.value) / M_PI;
-
+			const Ray newRay{origin, sampleIndirect.direction};
 			const auto Li = radiance(offsetRay(newRay, normal), scene, lights, depth + 1);
-
-			indirectLighting = it->object->color * f / sample.pdf * Li;
+			indirectLighting = it->object->albedo * sampleIndirect.contrib * Li;
 		}
 
-		Color directLighting{Vec{0, 0, 0}};
-
-		if(!it->object->isMirror)
-		{
-			const auto Lo = getLo(origin, normal, lights, scene);
-			directLighting = it->object->color * Lo;
-		}
+		const Color directLighting = it->object->albedo * getLo(origin, normal, lights, scene, it->object->material);
 
 		return directLighting + indirectLighting;
 	}
@@ -567,8 +630,8 @@ int main()
 
 	std::cout << intersectScene(Ray{Position{Vec{0, 0, 0}}, NormalizedDirection{Vec{1, 0, 0}}},
 								std::vector<Object>{
-									Object{Sphere{Position{Vec{10, 0, 0}}, 9}, Color{Vec{1, 0, 0}}, false},
-									Object{Sphere{Position{Vec{4, 0, 0}}, 2}, Color{Vec{1, 1, 1}}, false}}) << " should be " << 1 << std::endl;
+									Object{Sphere{Position{Vec{10, 0, 0}}, 9}, Color{Vec{1, 0, 0}}, Diffuse{}},
+									Object{Sphere{Position{Vec{4, 0, 0}}, 2}, Color{Vec{1, 1, 1}}, Diffuse{}}}) << " should be " << 1 << std::endl;
 
 	const Camera camera{1024, 40, -10, 1.17}; // 1024x1024 pixels, with the screen between [-20 and 20]
 
@@ -583,13 +646,13 @@ int main()
 
 	float R = 1000;
 	std::vector<Object> scene{
-		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, true}, // Center Mirror
-		{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, false}, // Center Diffuse
-		{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, false}, // left
-		{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, false}, // right
-		{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false}, // top
-		{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false}, // bottom
-		{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, false} // back
+		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Mirror{}}, // Center Mirror
+		{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Diffuse{}}, // Center Diffuse
+		{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, Diffuse{}}, // left
+		{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, Diffuse{}}, // right
+		{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // top
+		{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // bottom
+		{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}} // back
 	};
 
 	std::vector<Light> lights{
