@@ -205,9 +205,14 @@ std::optional<float> intersectSphere(const Ray &ray, const Sphere &sphere)
 	}
 }
 
+float clamp(const float v)
+{
+	return std::min(1.f, std::max(0.f, v));
+}
+
 int toInt(const float v)
 {
-	return int(v * 255);
+	return int(std::pow(clamp(v), 1.f / 2.2f) * 255);
 }
 
 struct Intersection
