@@ -6,286 +6,17 @@
 #include <vector>
 #include <random>
 
-float sqr(const float v)
-{
-	return v * v;
-}
-
-struct Vec
-{
-	float x, y, z;
-};
-
-Vec operator-(const Vec &a, const Vec &b)
-{
-	return {a.x - b.x, a.y - b.y, a.z - b.z};
-}
-
-Vec operator+(const Vec &a, const Vec &b)
-{
-	return {a.x + b.x, a.y + b.y, a.z + b.z};
-}
-
-Vec operator*(const Vec &a, const float f)
-{
-	return {a.x * f, a.y * f, a.z * f};
-}
-
-Vec operator*(const float f, const Vec &a)
-{
-	return {a.x * f, a.y * f, a.z * f};
-}
-
-Vec operator/(const Vec &a, const float f)
-{
-	return {a.x / f, a.y / f, a.z / f};
-}
-
-Vec operator/(const float f, const Vec &a)
-{
-	return {a.x / f, a.y / f, a.z / f};
-}
-
-float dot(const Vec &a, const Vec &b)
-{
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-
-struct Position
-{
-	Vec value;
-};
-
-struct Color
-{
-	Vec value;
-};
-
-Color operator-(const Color &a, const Color &b)
-{
-	return {a.value.x - b.value.x, a.value.y - b.value.y, a.value.z - b.value.z};
-}
-
-Color operator+(const Color &a, const Color &b)
-{
-	return {a.value.x + b.value.x, a.value.y + b.value.y, a.value.z + b.value.z};
-}
-
-Color operator*(const Color &a, const Color &b)
-{
-	return {a.value.x * b.value.x, a.value.y * b.value.y, a.value.z * b.value.z};
-}
-
-Color operator*(const Color &a, const float f)
-{
-	return {a.value.x * f, a.value.y * f, a.value.z * f};
-}
-
-Color operator*(const float f, const Color &a)
-{
-	return {a.value.x * f, a.value.y * f, a.value.z * f};
-}
-
-Color operator/(const Color &a, const float f)
-{
-	return {a.value.x / f, a.value.y / f, a.value.z / f};
-}
-
-Color operator/(const float f, const Color &a)
-{
-	return {a.value.x / f, a.value.y / f, a.value.z / f};
-}
-
-float norm2(const Vec &v)
-{
-	return sqr(v.x) + sqr(v.y) + sqr(v.z);
-}
-
-Vec normalize(const Vec &v)
-{
-	return v * (1.f / std::sqrt(norm2(v)));
-}
-
-struct NormalizedDirection
-{
-	explicit NormalizedDirection(const Vec &v): value(normalize(v))
-	{
-	}
-
-	Vec value;
-};
-
-std::ostream& operator<<(std::ostream &stream, const Vec &d)
-{
-	stream << "Vec{" << d.x << "," << d.y << "," << d.z << "}";
-	return stream;
-}
-
-std::ostream& operator<<(std::ostream &stream, const NormalizedDirection &d)
-{
-	stream << "NormalizedDirection{" << d.value << "}";
-	return stream;
-}
-
-std::ostream& operator<<(std::ostream &stream, const Position &d)
-{
-	stream << "Position{" << d.value << "}";
-	return stream;
-}
-
-std::ostream& operator<<(std::ostream &stream, const Color &d)
-{
-	stream << "Color{" << d.value << "}";
-	return stream;
-}
-
-template<typename T>
-std::ostream& operator<<(std::ostream &stream, const std::optional<T> &o)
-{
-	stream << "Optional: ";
-	if(o)
-	{
-		stream << "{" << *o << "}";
-	}
-	else
-	{
-		stream << "EMPTY";
-	}
-
-	return stream;
-}
-
-struct Ray
-{
-	Position origin;
-	NormalizedDirection direction;
-};
-
-struct Sphere
-{
-	Position center;
-	float radius;
-};
-
-struct Diffuse
-{};
-
-float FDiffuse(const NormalizedDirection &n, const NormalizedDirection w)
-{
-	return dot(n.value, w.value) / M_PI;
-}
-
-struct Mirror
-{};
-
-using Material = std::variant<Diffuse, Mirror>;
-
-struct Object
-{
-	Sphere sphere;
-	Color albedo;
-
-	Material material;
-};
-
-std::optional<float> intersectSphere(const Ray &ray, const Sphere &sphere)
-{
-	const Vec op = sphere.center.value - ray.origin.value;
-
-	const float b = dot(op, ray.direction.value);
-	const float det2 = b * b - dot(op, op) + sqr(sphere.radius);
-
-	if (det2 < 0)
-	{
-		return std::nullopt;
-	}
-	else
-	{
-		const float det = std::sqrt(det2);
-
-		const float t0 = b - det;
-		const float t1 = b + det;
-
-		if(t0 > 0)
-		{
-			return t0;
-		}
-		else if(t1 > 0)
-			return t1;
-		else
-		{
-			return std::nullopt;
-		}
-	}
-}
-
-float clamp(const float v)
-{
-	return std::min(1.f, std::max(0.f, v));
-}
-
-int toInt(const float v)
-{
-	return int(std::pow(clamp(v), 1.f / 2.2f) * 255);
-}
-
-struct Intersection
-{
-	float t;
-	const Object *object;
-};
-
-std::ostream& operator<<(std::ostream &stream, const Intersection &i)
-{
-	stream << "Intersection{" << i.t << "," << i.object << "}";
-	return stream;
-}
-
-std::ostream& operator<<(std::ostream &stream, const Sphere &s)
-{
-	stream << "Sphere{" << s.center << "," << s.radius << "}";
-	return stream;
-}
-
-struct MaterialStream
-{
-	std::ostream& stream;
-
-	std::ostream& operator()(const Diffuse &) const
-	{
-		stream << "Diffuse{}";
-		return stream;
-	}
-
-	std::ostream& operator()(const Mirror &) const
-	{
-		stream << "Mirror{}";
-		return stream;
-	}
-};
-
-std::ostream& operator<<(std::ostream &stream, const Material &m)
-{
-	stream << "Material{";
-	std::visit(MaterialStream{stream}, m);
-	stream << "}";
-	return stream;
-}
-
-std::ostream& operator<<(std::ostream &stream, const Object &o)
-{
-	stream << "Object{" << o.sphere << "," << o.albedo << "," << o.material << "}";
-	return stream;
-}
-
-using LightShape = std::variant<Sphere, Position>;
-
-struct Light
-{
-	LightShape shape;
-	Color intensity;
-};
+#include "vec.h"
+#include "utils.h"
+#include "material.h"
+#include "bbox.h"
+#include "ray.h"
+#include "camera.h"
+#include "sampling.h"
+#include "sphere.h"
+#include "object.h"
+#include "light.h"
+#include "intersect.h"
 
 struct Scene
 {
@@ -309,92 +40,6 @@ std::optional<Intersection> intersectScene(const Ray &ray, const std::vector<Obj
 
 	return result;
 }
-
-Position getIntersectionPosition(const Ray &ray, const float t)
-{
-	return Position{ray.origin.value + ray.direction.value * t};
-}
-
-NormalizedDirection getNormal(const Sphere &s, const Position &p)
-{
-	const Vec direction = p.value - s.center.value;
-	return NormalizedDirection{direction};
-}
-
-NormalizedDirection getMirrorDirection(const NormalizedDirection &I, const NormalizedDirection &N)
-{
-	const Vec direction = {I.value - N.value * (dot(N.value, I.value) * 2)};
-	return NormalizedDirection{direction};
-}
-
-
-// Sampling
-template<typename T>
-struct Sample
-{
-	T sample;
-	float pdf;
-};
-
-Ray offsetRay(const Ray &ray, const NormalizedDirection &normal)
-{
-	return Ray{Position{ray.origin.value + 0.001 * normal.value}, ray.direction};
-}
-
-// TotalCompendium, (34)
-Sample<NormalizedDirection> sampleUniformSphere(const float u, const float v)
-{
-	const float pi2u = 2 * M_PI * u;
-	const float sqrtv1minusv = std::sqrt(v * (1 - v));
-	return {
-		NormalizedDirection{Vec{2.f * std::cos(pi2u) * sqrtv1minusv, 2.f * std::sin(pi2u) * sqrtv1minusv, 1.f - 2 * v}},
-			1 / (4.f * M_PI)
-				};
-}
-
-// TotalCompendium, (34)
-Sample<NormalizedDirection> sampleUniformHemisphere(const float u, const float v)
-{
-	const float pi2u = 2 * M_PI * u;
-	const float sqrt1minusvv = std::sqrt(1 - sqr(v));
-	return {
-		NormalizedDirection{Vec{std::cos(pi2u) * sqrt1minusvv, std::sin(pi2u) * sqrt1minusvv, v}},
-			1 / (2.f * M_PI)
-				};
-}
-
-// Total compendium (35)
-Sample<NormalizedDirection> sampleUniformHemisphereCos(const float u, const float v)
-{
-	const float pi2u = 2 * M_PI * u;
-	const float sqrt1minusv = std::sqrt(1 - v);
-
-	const float sqrtv = std::sqrt(v);
-	return {
-		NormalizedDirection{Vec{std::cos(pi2u) * sqrt1minusv, std::sin(pi2u) * sqrt1minusv, sqrtv}},
-			float(sqrtv / M_PI)
-				};
-}
-
-// Orthonormal base
-// From
-// http://jcgt.org/published/0006/01/01/
-void branchlessONB(const Vec & n , Vec & b1 , Vec & b2 )
-{
-	float sign = std::copysign(1.0f, n.z);
-	const float a = -1.0f / (sign + n.z);
-	const float b = n.x * n.y * a;
-	b1 = Vec{1.0f + sign * n.x * n.x * a, sign * b, -sign * n.x};
-	b2 = Vec{b, sign + n.y * n.y * a, -n.y};
-}
-
-NormalizedDirection RotateAroundBase(const NormalizedDirection &input, const NormalizedDirection &normal)
-{
-	Vec basex, basey;
-	branchlessONB(normal.value, basex, basey);
-
-	return NormalizedDirection{basex * input.value.x + basey * input.value.y + normal.value * input.value.z};
-};
 
 thread_local std::random_device r;
 
@@ -424,11 +69,6 @@ struct SelectPointOnLight
 		return {p, sample.pdf / sqr(s.radius)};
 	}
 };
-
-float surface(const Sphere &s)
-{
-	return sqr(s.radius) * 4 * M_PI;
-}
 
 struct LightIllumination
 {
@@ -517,11 +157,6 @@ Color getLo(const Position &p, const NormalizedDirection &n, const Scene &scene,
 	return {0.f, 0.f, 0.f};;
 }
 
-NormalizedDirection invert(const NormalizedDirection &n)
-{
-	return NormalizedDirection{n.value * -1};
-}
-
 struct SampleIndirect
 {
 	float contrib;
@@ -582,31 +217,6 @@ Color radiance(const Ray &ray, const Scene &scene, const int depth)
 	{
 		return Color{Vec{0, 0, 0}};
 	}
-}
-
-struct Camera
-{
-	int pixelSize;
-	float sceneSize;
-
-	float zPos;
-	float opening;
-};
-
-float scaleCoordinate(const Camera &camera, const float v)
-{
-	return ((v / camera.pixelSize) - 0.5) * camera.sceneSize;
-}
-
-Ray sampleCamera(const Camera &camera, const float x, const float y)
-{
-	// we sample a point on the camera plane
-	const Position posCameraA{Vec{scaleCoordinate(camera, x), scaleCoordinate(camera, y), camera.zPos}};
-
-	// we sample a point on a bigger plane away from the camera
-	const Position posCameraB {Vec{posCameraA.value.x * camera.opening, posCameraA.value.y * camera.opening, camera.zPos + 10}};
-
-	return {posCameraA, NormalizedDirection{posCameraB.value - posCameraA.value}};
 }
 
 int main()
