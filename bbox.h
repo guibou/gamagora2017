@@ -66,3 +66,10 @@ std::optional<float> intersectBBox(const Ray &ray, const BBox &box) {
 	}
 	return std::nullopt;
 }
+
+float surface(const BBox &box)
+{
+	const Vec size = bboxSize(box);
+
+	return 2 * (size.x * size.y + size.x * size.z + size.y * size.z);
+}

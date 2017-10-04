@@ -85,6 +85,18 @@ BBox computeBox(decltype(std::vector<Object>{}.begin()) start, decltype(std::vec
 	return box;
 }
 
+float cost(const BBox &V, const BBox &Vl, const BBox &Vr, const int Nl, const int Nr)
+{
+	const float surfaceV = surface(V);
+	const float surfaceVl = surface(Vl);
+	const float surfaceVr = surface(Vr);
+
+	const float Kt = 1.f;
+	const float Ki = 1.f;
+
+	return Kt + Ki * (surfaceVl / surfaceV * Nl + surfaceVr / surfaceV * Nr);
+}
+
 // Construction récursive de larbre
 std::unique_ptr<Tree> buildTree(decltype(std::vector<Object>{}.begin()) start, decltype(std::vector<Object>{}.end()) end)
 {
