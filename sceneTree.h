@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 
 #include "bbox.h"
 #include "object.h"
@@ -208,6 +209,18 @@ struct Scene
 	Scene(const std::vector<Object> &_objects, const std::vector<Light> &_lights)
 		:objects(_objects), lights(_lights)
 	{
+		auto start = std::chrono::system_clock::now();
 		tree = buildTree(std::begin(objects), std::end(objects));
+		auto end = std::chrono::system_clock::now();
+		std::chrono::duration<double> elapsed_seconds = end-start;
+
+		std::cout << "Building BVH time:" << elapsed_seconds.count() << "s\n";
 	}
 };
+
+/*
+timing:
+- with big spheres: 14.960s
+- with small spheres: 3.898
+ */
+
