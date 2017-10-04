@@ -1,2 +1,2 @@
-CXXFLAGS=-Wall -Wextra -g -Ofast -std=c++17 -fopenmp
+CXXFLAGS=-Wall -Wextra -g -std=c++17 -fopenmp -O3
 rt: rt.cpp

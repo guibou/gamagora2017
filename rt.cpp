@@ -5,6 +5,8 @@
 #include <cmath>
 #include <vector>
 #include <random>
+#include <algorithm>
+#include <assert.h>
 
 float sqr(const float v)
 {
@@ -232,6 +234,12 @@ int toInt(const float v)
 
 struct Intersection
 {
+	Intersection(const float _t, const Object *_object)
+	{
+		assert(std::isfinite(_t) && _t > 0);
+		t = _t;
+		object = _object;
+	}
 	float t;
 	const Object *object;
 };
@@ -287,11 +295,263 @@ struct Light
 	Color intensity;
 };
 
+struct BBox
+{
+	Position pMin;
+	Position pMax;
+};
+
+bool pointInBox(const Position &p, const BBox &box)
+{
+	return
+		   box.pMin.value.x <= p.value.x
+		&& box.pMin.value.y <= p.value.y
+		&& box.pMin.value.z <= p.value.z
+		&& box.pMax.value.x >= p.value.x
+		&& box.pMax.value.y >= p.value.y
+		&& box.pMax.value.z >= p.value.z;
+}
+
+BBox bboxUnion(const BBox &boxA, const BBox &boxB)
+{
+	return {Vec{
+			std::min(boxA.pMin.value.x, boxB.pMin.value.x),
+			std::min(boxA.pMin.value.y, boxB.pMin.value.y),
+			std::min(boxA.pMin.value.z, boxB.pMin.value.z)
+				},
+			Vec{
+			std::max(boxA.pMax.value.x, boxB.pMax.value.x),
+			std::max(boxA.pMax.value.y, boxB.pMax.value.y),
+			std::max(boxA.pMax.value.z, boxB.pMax.value.z)
+				}};
+};
+
+BBox bboxSphere(const Sphere &sphere)
+{
+	auto p = sphere.center.value;
+
+	Vec radius = Vec{1, 1, 1} * sphere.radius;
+
+	return {Position{p - radius},
+			Position{p + radius}};
+}
+
+Vec bboxSize(const BBox &box)
+{
+	return box.pMax.value - box.pMin.value;
+}
+
+struct Leaf
+{
+	const Object *object;
+};
+
+struct EmptyLeaf
+{};
+
+struct Node;
+
+using Tree = std::variant<Leaf, EmptyLeaf, Node>;
+
+struct Node
+{
+	BBox box;
+
+	Tree* childA;
+	Tree* childB;
+};
+
+std::ostream& operator<<(std::ostream &s, const Tree &t);
+
+struct DisplayTree
+{
+	std::ostream &s;
+
+	void operator()(const EmptyLeaf &)
+	{
+		s << "EmptyLeaf{}";
+	}
+
+	void operator()(const Leaf &l)
+	{
+		s << "Leaf{";
+		s << l.object;
+		s << "}";
+	}
+
+	void operator()(const Node &l)
+	{
+		s << "Node{";
+		s << *(l.childA);
+		s << ",";
+		s << *(l.childB);
+		s << "}";
+	}
+};
+
+std::ostream& operator<<(std::ostream &s, const Tree &t)
+{
+	std::visit(DisplayTree{s}, t);
+
+	return s;
+}
+
+BBox empty()
+{
+	const float inf = std::numeric_limits<float>::infinity();
+	return BBox{Vec{inf, inf, inf}, Vec{-inf, -inf, -inf}};
+}
+
+float getAxe(const Vec &v, const int axe)
+{
+	switch(axe)
+	{
+	case 0: return v.x;
+	case 1: return v.y;
+	case 2: return v.z;
+	}
+
+	return -10;
+}
+
+Tree* buildTree(std::vector<Object> objects)
+{
+	if(objects.size() == 0)
+	{
+		return new Tree{EmptyLeaf{}};
+	}
+
+	if(objects.size() == 1)
+	{
+		return new Tree{Leaf{&objects[0]}};
+	}
+
+	// Compute the box of the objects
+	BBox box = empty();
+
+	for(const auto &object : objects)
+	{
+		box = bboxUnion(box, bboxSphere(object.sphere));
+	}
+
+	// split against the bigest axe
+	auto size = bboxSize(box);
+	auto axe = (size.z > size.y && size.z > size.x ? 2 : (size.y > size.x ? 1 : 0));
+
+	std::sort(std::begin(objects), std::end(objects), [axe](const Object &objectA, const Object &objectB)
+			  {
+				  return getAxe(objectA.sphere.center.value, axe) <
+					  getAxe(objectB.sphere.center.value, axe);
+			  });
+
+	// create subObjectsList
+	std::vector<Object> subA(std::begin(objects), std::begin(objects) + objects.size() / 2);
+	std::vector<Object> subB(std::begin(objects) + objects.size() / 2, std::end(objects));
+
+	return new Tree{Node{box, buildTree(subA), buildTree(subB)}};
+}
+
 struct Scene
 {
 	std::vector<Object> objects;
 	std::vector<Light> lights;
+
+	Tree *tree;
+
+	Scene(const std::vector<Object> &_objects, const std::vector<Light> &_lights)
+		:objects(_objects), lights(_lights)
+	{
+		tree = buildTree(_objects);
+		std::cout << *tree << std::endl;
+	}
 };
+
+std::optional<float> intersectBBox(const Ray &ray, const BBox &box) {
+	const float tx1 = (box.pMin.value.x - ray.origin.value.x)/ray.direction.value.x;
+	const float tx2 = (box.pMax.value.x - ray.origin.value.x)/ray.direction.value.x;
+
+	float tmin = std::min(tx1, tx2);
+	float tmax = std::max(tx1, tx2);
+
+	const float ty1 = (box.pMin.value.y - ray.origin.value.y)/ray.direction.value.y;
+	const float ty2 = (box.pMax.value.y - ray.origin.value.y)/ray.direction.value.y;
+
+	tmin = std::max(tmin, std::min(ty1, ty2));
+	tmax = std::min(tmax, std::max(ty1, ty2));
+
+	if(tmax >= tmin)
+	{
+		return tmin;
+	}
+	return std::nullopt;
+}
+
+std::optional<Intersection> intersectScene(const Ray &ray, const Tree &objects, const float minT);
+
+
+struct IntersectVisitor
+{
+	const Ray &ray;
+	const float minT;
+
+	std::optional<Intersection> operator()(const Leaf &l)
+	{
+		auto it = intersectSphere(ray, l.object->sphere);
+
+		if(it && *it < minT)
+		{
+			return Intersection{*it, l.object};
+		}
+
+		return std::nullopt;
+	}
+
+	std::optional<Intersection> operator()(const EmptyLeaf &)
+	{
+		return std::nullopt;
+	}
+
+	std::optional<Intersection> operator()(const Node &n)
+	{
+		//auto it = intersectBBox(ray, n.box);
+
+		//if(pointInBox(ray.origin, n.box) || (it && *it < minT))
+		{
+			auto itA = intersectScene(ray, *n.childA, minT);
+
+			auto itB = intersectScene(ray, *n.childB, (itA ? std::min(itA->t, minT) : minT));
+
+			if(itA && !itB)
+			{
+				return itA;
+			}
+			else if(itB && !itA)
+			{
+				return itB;
+			}
+			else
+			{
+				if(itA->t < itB->t)
+				{
+					return itA;
+				}
+				return itB;
+			}
+		}
+
+		return std::nullopt;
+	}
+};
+
+std::optional<Intersection> intersectScene(const Ray &ray, const Tree &objects)
+{
+	return intersectScene(ray, objects, std::numeric_limits<float>::infinity());
+}
+
+std::optional<Intersection> intersectScene(const Ray &ray, const Tree &objects, const float minT)
+{
+	return std::visit(IntersectVisitor{ray, minT}, objects);
+}
 
 std::optional<Intersection> intersectScene(const Ray &ray, const std::vector<Object> &objects)
 {
@@ -503,7 +763,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const Scene &scene,
 			// check occlusion
 			const Ray ray{p, illuminationDirection};
 
-			const auto it = intersectScene(offsetRay(ray, n), scene.objects);
+			const auto it = intersectScene(offsetRay(ray, n), *scene.tree);
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
@@ -555,10 +815,11 @@ Color radiance(const Ray &ray, const Scene &scene, const int depth)
 	if(depth == 5)
 		return Color{Vec{0, 0, 0}};
 
-	auto it = intersectScene(ray, scene.objects);
+	auto it = intersectScene(ray, *scene.tree);
 
 	if(it)
 	{
+		return it->object->albedo;
 		Position origin = getIntersectionPosition(ray, it->t);
 		NormalizedDirection normalGeom = getNormal(it->object->sphere, origin);
 		NormalizedDirection normal = dot(normalGeom.value, ray.direction.value) < 0 ? normalGeom : invert(normalGeom);
@@ -668,7 +929,7 @@ int main()
 		}
 	};
 
-	const int nSamples = 64;
+	const int nSamples = 1;
 
 	std::vector<Color> output(w * h, Color{Vec{0, 0, 0}});
 
