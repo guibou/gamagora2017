@@ -279,11 +279,25 @@ std::ostream& operator<<(std::ostream &stream, const Object &o)
 	return stream;
 }
 
-std::optional<Intersection> intersectScene(const Ray &ray, const std::vector<Object> &scene)
+using LightShape = std::variant<Sphere, Position>;
+
+struct Light
+{
+	LightShape shape;
+	Color intensity;
+};
+
+struct Scene
+{
+	std::vector<Object> objects;
+	std::vector<Light> lights;
+};
+
+std::optional<Intersection> intersectScene(const Ray &ray, const std::vector<Object> &objects)
 {
 	std::optional<Intersection> result = std::nullopt;
 
-	for(auto &object : scene)
+	for(auto &object : objects)
 	{
 		auto it = intersectSphere(ray, object.sphere);
 
@@ -313,13 +327,6 @@ NormalizedDirection getMirrorDirection(const NormalizedDirection &I, const Norma
 	return NormalizedDirection{direction};
 }
 
-using LightShape = std::variant<Sphere, Position>;
-
-struct Light
-{
-	LightShape shape;
-	Color intensity;
-};
 
 // Sampling
 template<typename T>
@@ -470,14 +477,14 @@ struct ComputeDirectLighting
 	}
 };
 
-Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<Light> &lights, const std::vector<Object> &scene, const Material &material)
+Color getLo(const Position &p, const NormalizedDirection &n, const Scene &scene, const Material &material)
 {
 	// stochastically select a light
 	const float uLight = uniformRandom(randomGenerator);
-	const int lightIdx = int(uLight * lights.size());
-	const float pdfLight = 1.f / lights.size();
+	const int lightIdx = int(uLight * scene.lights.size());
+	const float pdfLight = 1.f / scene.lights.size();
 
-	const auto &light = lights[lightIdx];
+	const auto &light = scene.lights[lightIdx];
 
 	{
 		const auto illuminationSample = std::visit(SelectPointOnLight(), light.shape);
@@ -496,7 +503,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const std::vector<L
 			// check occlusion
 			const Ray ray{p, illuminationDirection};
 
-			const auto it = intersectScene(offsetRay(ray, n), scene);
+			const auto it = intersectScene(offsetRay(ray, n), scene.objects);
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
@@ -543,12 +550,12 @@ struct IndirectSampling
 	}
 };
 
-Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vector<Light> &lights, const int depth)
+Color radiance(const Ray &ray, const Scene &scene, const int depth)
 {
 	if(depth == 5)
 		return Color{Vec{0, 0, 0}};
 
-	auto it = intersectScene(ray, scene);
+	auto it = intersectScene(ray, scene.objects);
 
 	if(it)
 	{
@@ -563,11 +570,11 @@ Color radiance(const Ray &ray, const std::vector<Object> &scene, const std::vect
 		if(sampleIndirect.contrib > 0.f)
 		{
 			const Ray newRay{origin, sampleIndirect.direction};
-			const auto Li = radiance(offsetRay(newRay, normal), scene, lights, depth + 1);
+			const auto Li = radiance(offsetRay(newRay, normal), scene, depth + 1);
 			indirectLighting = it->object->albedo * sampleIndirect.contrib * Li;
 		}
 
-		const Color directLighting = it->object->albedo * getLo(origin, normal, lights, scene, it->object->material);
+		const Color directLighting = it->object->albedo * getLo(origin, normal, scene, it->object->material);
 
 		return directLighting + indirectLighting;
 	}
@@ -645,25 +652,26 @@ int main()
 	const int h = camera.pixelSize;
 
 	float R = 1000;
-	std::vector<Object> scene{
-		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Mirror{}}, // Center Mirror
-		{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Diffuse{}}, // Center Diffuse
-		{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, Diffuse{}}, // left
-		{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, Diffuse{}}, // right
-		{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // top
-		{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // bottom
-		{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}} // back
-	};
 
-	std::vector<Light> lights{
-		{LightShape{Sphere{Position{Vec{0, 10, 0}}, 2}}, Color{Vec{10000, 10000, 10000}}}
-		// {LightShape{Position{Vec{0, 10, 0}}}, Color{Vec{10000, 10000, 10000}}}
+	const Scene scene{{
+			{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Mirror{}}, // Center Mirror
+			{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Diffuse{}}, // Center Diffuse
+			{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, Diffuse{}}, // left
+			{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, Diffuse{}}, // right
+			{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // top
+			{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // bottom
+			{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}} // back
+		},
+		{
+			{LightShape{Sphere{Position{Vec{0, 10, 0}}, 2}}, Color{Vec{10000, 10000, 10000}}}
+			// {LightShape{Position{Vec{0, 10, 0}}}, Color{Vec{10000, 10000, 10000}}}
+		}
 	};
 
 	const int nSamples = 64;
 
 	std::vector<Color> output(w * h, Color{Vec{0, 0, 0}});
-	
+
 #pragma omp parallel for
 	for(unsigned y = 0; y < h; ++y)
 	{
@@ -678,7 +686,7 @@ int main()
 
 				const Ray ray = sampleCamera(camera, x + u - 0.5f, h - y + v - 0.5f);
 
-				color = color + radiance(ray, scene, lights, 0);
+				color = color + radiance(ray, scene, 0);
 			}
 
 			output[y * w + x] = color / nSamples;
