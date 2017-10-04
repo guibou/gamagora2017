@@ -17,29 +17,7 @@
 #include "object.h"
 #include "light.h"
 #include "intersect.h"
-
-struct Scene
-{
-	std::vector<Object> objects;
-	std::vector<Light> lights;
-};
-
-std::optional<Intersection> intersectScene(const Ray &ray, const std::vector<Object> &objects)
-{
-	std::optional<Intersection> result = std::nullopt;
-
-	for(auto &object : objects)
-	{
-		auto it = intersectSphere(ray, object.sphere);
-
-		if(it && (!result || *it < result->t))
-		{
-			result = Intersection{*it, &object};
-		}
-	}
-
-	return result;
-}
+#include "sceneTree.h"
 
 thread_local std::random_device r;
 
@@ -143,7 +121,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const Scene &scene,
 			// check occlusion
 			const Ray ray{p, illuminationDirection};
 
-			const auto it = intersectScene(offsetRay(ray, n), scene.objects);
+			const auto it = intersectScene(offsetRay(ray, n), *scene.tree);
 
 			if(!it || sqr(it->t) > distanceSquared)
 			{
@@ -154,7 +132,7 @@ Color getLo(const Position &p, const NormalizedDirection &n, const Scene &scene,
 		}
 	}
 
-	return {0.f, 0.f, 0.f};;
+	return {0.f, 0.f, 0.f};
 }
 
 struct SampleIndirect
@@ -190,7 +168,7 @@ Color radiance(const Ray &ray, const Scene &scene, const int depth)
 	if(depth == 5)
 		return Color{Vec{0, 0, 0}};
 
-	auto it = intersectScene(ray, scene.objects);
+	auto it = intersectScene(ray, *scene.tree);
 
 	if(it)
 	{
@@ -245,10 +223,6 @@ int main()
 	std::cout << intersectSphere(Ray{Position{Vec{10, 0, 0}}, NormalizedDirection{Vec{1, 1, 1}}},
 								 Sphere{Position{Vec{10, 0, 0}}, 2}) << " should be " << 2 << std::endl;
 
-	std::cout << intersectScene(Ray{Position{Vec{0, 0, 0}}, NormalizedDirection{Vec{1, 0, 0}}},
-								std::vector<Object>{
-									Object{Sphere{Position{Vec{10, 0, 0}}, 9}, Color{Vec{1, 0, 0}}, Diffuse{}},
-									Object{Sphere{Position{Vec{4, 0, 0}}, 2}, Color{Vec{1, 1, 1}}, Diffuse{}}}) << " should be " << 1 << std::endl;
 
 	const Camera camera{1024, 40, -10, 1.17}; // 1024x1024 pixels, with the screen between [-20 and 20]
 
@@ -263,22 +237,38 @@ int main()
 
 	float R = 1000;
 
-	const Scene scene{{
-			{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Mirror{}}, // Center Mirror
-			{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Diffuse{}}, // Center Diffuse
-			{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, Diffuse{}}, // left
-			{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, Diffuse{}}, // right
-			{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // top
-			{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // bottom
-			{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}} // back
-		},
+	std::vector<Object> spheres
+	{
+		{{Position{Vec{-8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Mirror{}}, // Center Mirror
+		{{Position{Vec{8, 0, 0}}, 5}, Color{Vec{1, 1, 1}}, Diffuse{}}, // Center Diffuse
+		{{Position{Vec{15 + R, 0, 0}}, R}, Color{Vec{1, 0, 0}}, Diffuse{}}, // left
+		{{Position{Vec{-15 - R, 0, 0}}, R}, Color{Vec{0, 0, 1}}, Diffuse{}}, // right
+		{{Position{Vec{0, 15 + R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // top
+		{{Position{Vec{0, - 15 - R, 0}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}}, // bottom
+		{{Position{Vec{0, 0, 15 + R}}, R}, Color{Vec{0.5, 0.5, 0.5}}, Diffuse{}} // back
+	};
+
+	// This is a big scene description, comment it out
+	/*
+	R = 1;
+	for(unsigned int i = 0; i < 10000; i++)
+	{
+		float x = uniformRandom(randomGenerator) - 0.5;
+		float y = uniformRandom(randomGenerator) - 0.5;
+		float z = uniformRandom(randomGenerator)- 0.5;
+
+		spheres.push_back({{Position{Vec{x, y, z} * 20 }, 0.1}, Color{Vec{1, 1, 1}}, Diffuse{}}); // Center Mirror
+	}
+	*/
+
+	const Scene scene{spheres,
 		{
 			{LightShape{Sphere{Position{Vec{0, 10, 0}}, 2}}, Color{Vec{10000, 10000, 10000}}}
 			// {LightShape{Position{Vec{0, 10, 0}}}, Color{Vec{10000, 10000, 10000}}}
 		}
 	};
 
-	const int nSamples = 64;
+	const int nSamples = 1;
 
 	std::vector<Color> output(w * h, Color{Vec{0, 0, 0}});
 

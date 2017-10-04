@@ -3,6 +3,7 @@
 #include <iostream>
 #include <optional>
 #include <cmath>
+#include <vector>
 
 float sqr(const float v)
 {
@@ -33,4 +34,17 @@ std::ostream& operator<<(std::ostream &stream, const std::optional<T> &o)
 	}
 
 	return stream;
+}
+
+template<typename T>
+std::ostream& operator<<(std::ostream &s, const std::vector<T> &v)
+{
+	s << "std::vector<>{\n";
+	for(auto &c : v)
+	{
+		s << "\t-" << c << std::endl;
+	}
+
+	s << "}";
+	return s;
 }
