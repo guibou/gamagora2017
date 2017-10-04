@@ -197,7 +197,7 @@ Color radiance(const Ray &ray, const Scene &scene, const int depth)
 	}
 }
 
-int main()
+int main(int argc, char**argv)
 {
 	// TESTS
 	std::cout << sqr(2) << " should be " << 4 << std::endl;
@@ -224,7 +224,11 @@ int main()
 								 Sphere{Position{Vec{10, 0, 0}}, 2}) << " should be " << 2 << std::endl;
 
 
-	const Camera camera{1024, 40, -10, 1.17}; // 1024x1024 pixels, with the screen between [-20 and 20]
+	const int resolution = argc >= 2 ? std::atoi(argv[1]) : 1024;
+	const unsigned nSamples = argc >= 3 ? std::atoi(argv[2]) : 1;
+	const bool sceneNo = argc >= 4 ? std::atoi(argv[3]) : 0;
+
+	const Camera camera{resolution, 40, -10, 1.17}; // 1024x1024 pixels, with the screen between [-20 and 20]
 
 	std::cout << scaleCoordinate(camera, 0) << " should be " << -20 << std::endl;
 	std::cout << scaleCoordinate(camera, 1024) << " should be " << 20 << std::endl;
@@ -232,9 +236,10 @@ int main()
 	std::cout << toInt(0) << " should be " << 0 << std::endl;
 	std::cout << toInt(1) << " should be " << 255 << std::endl;
 
-	const int w = camera.pixelSize;
-	const int h = camera.pixelSize;
+	const unsigned w = camera.pixelSize;
+	const unsigned h = camera.pixelSize;
 
+	// these big spheres just kill the acceleration structure
 	float R = 1000;
 
 	std::vector<Object> spheres
@@ -249,17 +254,17 @@ int main()
 	};
 
 	// This is a big scene description, comment it out
-	/*
-	R = 1;
-	for(unsigned int i = 0; i < 10000; i++)
+	if(sceneNo == 1)
 	{
-		float x = uniformRandom(randomGenerator) - 0.5;
-		float y = uniformRandom(randomGenerator) - 0.5;
-		float z = uniformRandom(randomGenerator)- 0.5;
+		for(unsigned int i = 0; i < 10000; i++)
+		{
+			float x = uniformRandom(randomGenerator) - 0.5;
+			float y = uniformRandom(randomGenerator) - 0.5;
+			float z = uniformRandom(randomGenerator)- 0.5;
 
-		spheres.push_back({{Position{Vec{x, y, z} * 20 }, 0.1}, Color{Vec{1, 1, 1}}, Diffuse{}}); // Center Mirror
+			spheres.push_back({{Position{Vec{x, y, z} * 20 }, 0.1}, Color{Vec{1, 1, 1}}, Diffuse{}}); // Center Mirror
+		}
 	}
-	*/
 
 	const Scene scene{spheres,
 		{
@@ -267,8 +272,6 @@ int main()
 			// {LightShape{Position{Vec{0, 10, 0}}}, Color{Vec{10000, 10000, 10000}}}
 		}
 	};
-
-	const int nSamples = 1;
 
 	std::vector<Color> output(w * h, Color{Vec{0, 0, 0}});
 
